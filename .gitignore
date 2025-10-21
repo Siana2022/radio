@@ -1,0 +1,12 @@
+# Dependencies
+/sgp-app/node_modules
+/renderer/node_modules
+
+# Build outputs
+/sgp-app/.next
+/sgp-app/out
+
+# Other
+.DS_Store
+*.log
+.env.local

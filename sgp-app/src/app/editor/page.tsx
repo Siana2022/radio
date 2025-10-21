@@ -3,6 +3,9 @@
 import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import { Stage, Layer, Rect, Text } from 'react-konva';
 import { KonvaEventObject } from 'konva/lib/Node';
+import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { User } from '@supabase/supabase-js';
 
 // Define types for our elements
 interface BaseElement {
@@ -30,9 +33,24 @@ type CanvasElement = RectangleElement | TextElement;
 const EditorPage = () => {
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    const checkUserSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+      } else {
+        setUser(session.user);
+      }
+    };
+    checkUserSession();
+  }, [router, supabase.auth]);
 
   useEffect(() => {
     const checkSize = () => {
@@ -83,6 +101,14 @@ const EditorPage = () => {
   };
 
   const selectedElement = elements.find((el) => el.id === selectedId);
+
+  if (!user) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-100">

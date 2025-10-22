@@ -1,80 +1,81 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Stage, Layer, Rect, Text } from 'react-konva';
+import { Stage, Layer, Rect, Text, Image as KonvaImage } from 'react-konva';
+import useImage from 'use-image';
+import gsap from 'gsap';
+import { Layer as KonvaLayerType } from 'konva/lib/Layer';
+import { KonvaNode } from 'konva/lib/Node';
 
-// Define types for the template elements
-interface Element {
-  type: 'rect' | 'text';
-  props: Record<string, unknown>;
-}
+// Define types
+interface Animation { type: 'none' | 'fadeIn' | 'slideInLeft'; duration: number; }
+interface BaseElement { id: string; x: number; y: number; animation?: Animation; }
+interface RectangleElement extends BaseElement { type: 'rect'; width: number; height: number; fill: string; }
+interface TextElement extends BaseElement { type: 'text'; text: string; fontSize: number; fill: string; }
+interface ImageElement extends BaseElement { type: 'image'; src: string; width: number; height: number; }
+type CanvasElement = RectangleElement | TextElement | ImageElement;
+interface TemplateData { width: number; height: number; elements: CanvasElement[]; }
 
-interface TemplateData {
-  width: number;
-  height: number;
-  elements: Element[];
-}
+const ImageComponent = ({ src, ...props }: ImageElement & { key: string }) => {
+  const [image] = useImage(src);
+  return <KonvaImage image={image} {...props} />;
+};
 
-/**
- * A dedicated page for rendering Konva scenes via Puppeteer.
- * It reads template data from the 'data' URL search parameter.
- *
- * Example of template data (URL-encoded JSON):
- * {
- *   "width": 1920,
- *   "height": 1080,
- *   "elements": [
- *     { "type": "rect", "props": { "x": 0, "y": 0, "width": 1920, "height": 1080, "fill": "#f0f0f0" } },
- *     { "type": "rect", "props": { "x": 50, "y": 50, "width": 200, "height": 100, "fill": "blue" } },
- *     { "type": "text", "props": { "x": 60, "y": 70, "text": "Hello SGP!", "fontSize": 40, "fill": "white" } }
- *   ]
- * }
- */
 const RenderPage = () => {
   const searchParams = useSearchParams();
   const [template, setTemplate] = useState<TemplateData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const layerRef = useRef<KonvaLayerType>(null);
 
   useEffect(() => {
     const dataParam = searchParams.get('data');
     if (dataParam) {
       try {
         const decodedData = decodeURIComponent(dataParam);
-        const parsedData = JSON.parse(decodedData);
-        setTemplate(parsedData);
-      } catch (e) {
-        setError('Failed to parse template data.');
-        console.error(e);
-      }
-    } else {
-      setError('No template data provided.');
+        setTemplate(JSON.parse(decodedData));
+      } catch (e) { console.error("Failed to parse template data", e); }
     }
   }, [searchParams]);
 
-  if (error) {
-    return <div>Error: {error}</div>;
-  }
+  useEffect(() => {
+    if (template && layerRef.current) {
+      const timeline = gsap.timeline({ paused: true });
 
-  if (!template) {
-    return <div>Loading template...</div>;
-  }
+      template.elements.forEach(element => {
+        const node: KonvaNode | undefined = layerRef.current?.findOne(`#${element.id}`);
+        if (node && element.animation) {
+          switch (element.animation.type) {
+            case 'fadeIn':
+              timeline.from(node, { opacity: 0, duration: element.animation.duration }, 0);
+              break;
+            case 'slideInLeft':
+              timeline.from(node, { x: -node.width(), duration: element.animation.duration, ease: 'power2.out' }, 0);
+              break;
+            default:
+              break;
+          }
+        }
+      });
+
+      (window as Window & { seekAnimation: (time: number) => void }).seekAnimation = (time: number) => {
+        timeline.seek(time);
+      };
+    }
+  }, [template]);
+
+  if (!template) { return <div>Loading...</div>; }
 
   return (
     <main>
       <div id="render-container">
         <Stage width={template.width} height={template.height}>
-          <Layer>
-            {template.elements.map((element, i) => {
-              switch (element.type) {
-                case 'rect':
-                  return <Rect key={i} {...element.props} />;
-                case 'text':
-                  return <Text key={i} {...element.props} />;
-                // Add other element types here in the future
-                default:
-                  return null;
-              }
+          <Layer ref={layerRef}>
+            {template.elements.map((element) => {
+              const props = { ...element, id: element.id };
+              if (element.type === 'rect') return <Rect key={element.id} {...props} />;
+              if (element.type === 'text') return <Text key={element.id} {...props} />;
+              if (element.type === 'image') return <ImageComponent key={element.id} {...props} />;
+              return null;
             })}
           </Layer>
         </Stage>

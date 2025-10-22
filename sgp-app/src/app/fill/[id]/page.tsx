@@ -63,7 +63,8 @@ const FillTemplatePage = () => {
   }, [fetchTemplate]);
 
   const handleFormChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({ ...prev, [name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const updatedElements = template?.data.elements.map(element => {

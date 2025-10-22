@@ -12,7 +12,16 @@ import { useRouter } from 'next/navigation';
 import { User } from '@supabase/supabase-js';
 
 // Define types
-interface BaseElement { id: string; x: number; y: number; }
+interface Animation {
+  type: 'none' | 'fadeIn' | 'slideInLeft';
+  duration: number;
+}
+interface BaseElement {
+  id: string;
+  x: number;
+  y: number;
+  animation?: Animation;
+}
 interface RectangleElement extends BaseElement { type: 'rect'; width: number; height: number; fill: string; }
 interface TextElement extends BaseElement { type: 'text'; text: string; fontSize: number; fill: string; }
 interface ImageElement extends BaseElement { type: 'image'; src: string; width: number; height: number; }
@@ -21,13 +30,7 @@ interface Template { id: string; name: string; data: { elements: CanvasElement[]
 
 const ImageComponent = ({ element, onSelect, isSelected }: { element: ImageElement, onSelect: () => void, isSelected: boolean }) => {
   const [image] = useImage(element.src);
-  return (
-    <KonvaImage
-      image={image} id={element.id} x={element.x} y={element.y} width={element.width} height={element.height} draggable
-      onClick={onSelect} onTap={onSelect}
-      stroke={isSelected ? 'red' : undefined} strokeWidth={isSelected ? 2 : 0}
-    />
-  );
+  return <KonvaImage image={image} id={element.id} x={element.x} y={element.y} width={element.width} height={element.height} draggable onClick={onSelect} onTap={onSelect} stroke={isSelected ? 'red' : undefined} strokeWidth={isSelected ? 2 : 0} />;
 };
 
 const EditorPage = () => {
@@ -101,13 +104,26 @@ const EditorPage = () => {
     setMessage('Started a new template.');
   };
 
-  const addRectangle = () => setElements(prev => [...prev, { id: crypto.randomUUID(), type: 'rect', x: 50, y: 50, width: 200, height: 100, fill: 'lightblue' }]);
-  const addText = () => setElements(prev => [...prev, { id: crypto.randomUUID(), type: 'text', x: 60, y: 70, text: 'New Text', fontSize: 30, fill: 'black' }]);
+  const addRectangle = () => setElements(prev => [...prev, { id: crypto.randomUUID(), type: 'rect', x: 50, y: 50, width: 200, height: 100, fill: 'lightblue', animation: { type: 'none', duration: 1 } }]);
+  const addText = () => setElements(prev => [...prev, { id: crypto.randomUUID(), type: 'text', x: 60, y: 70, text: 'New Text', fontSize: 30, fill: 'black', animation: { type: 'none', duration: 1 } }]);
   const checkDeselect = (e: KonvaEventObject<MouseEvent>) => { if (e.target === e.target.getStage()) setSelectedId(null); };
+
   const handlePropertyChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!selectedId) return;
     const { name, value } = e.target;
     setElements(elements.map(el => el.id === selectedId ? { ...el, [name]: value } : el));
+  };
+
+  const handleAnimationChange = (e: ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+    if (!selectedId) return;
+    const { name, value } = e.target;
+    setElements(elements.map(el => {
+      if (el.id === selectedId) {
+        const newAnimation = { ...el.animation, [name]: name === 'duration' ? parseFloat(value) : value };
+        return { ...el, animation: newAnimation as Animation };
+      }
+      return el;
+    }));
   };
 
   const onCropComplete = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
@@ -122,6 +138,7 @@ const EditorPage = () => {
         const newImageElement: ImageElement = {
           id: crypto.randomUUID(), type: 'image', src: croppedImage, x: 50, y: 50,
           width: croppedAreaPixels.width, height: croppedAreaPixels.height,
+          animation: { type: 'none', duration: 1 },
         };
         setElements(prev => [...prev, newImageElement]);
         setImage(null);
@@ -170,6 +187,20 @@ const EditorPage = () => {
           <div className="space-y-4">
             {selectedElement.type !== 'image' && <div><label className="block text-sm">Fill</label><input type="text" name="fill" value={selectedElement.fill} onChange={handlePropertyChange} className="w-full p-2 border rounded" /></div>}
             {selectedElement.type === 'text' && <div><label className="block text-sm">Text</label><input type="text" name="text" value={selectedElement.text} onChange={handlePropertyChange} className="w-full p-2 border rounded" /></div>}
+            <hr />
+            <h3 className="text-lg font-semibold">Animation</h3>
+            <div>
+              <label className="block text-sm">Type</label>
+              <select name="type" value={selectedElement.animation?.type || 'none'} onChange={handleAnimationChange} className="w-full p-2 border rounded mt-1">
+                <option value="none">None</option>
+                <option value="fadeIn">Fade In</option>
+                <option value="slideInLeft">Slide In From Left</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm">Duration (s)</label>
+              <input type="number" name="duration" value={selectedElement.animation?.duration || 1} onChange={handleAnimationChange} className="w-full p-2 border rounded mt-1" step="0.1" />
+            </div>
           </div>
         ) : <p className="text-sm text-gray-500">Select an element.</p>}
       </aside>

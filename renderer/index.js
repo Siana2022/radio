@@ -3,6 +3,8 @@ const puppeteer = require('puppeteer');
 const { exec } = require('child_process');
 const util = require('util');
 const cors = require('cors');
+const fs = require('fs').promises;
+const path = require('path');
 
 const execAsync = util.promisify(exec);
 const app = express();
@@ -12,59 +14,65 @@ app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
 async function renderVideo(templateData) {
-  console.log('Rendering video with data:', templateData);
+  const DURATION_IN_SECONDS = 5;
+  const FRAME_RATE = 30;
+  const TOTAL_FRAMES = DURATION_IN_SECONDS * FRAME_RATE;
+
+  const tempDir = await fs.mkdtemp(path.join('/tmp', 'sgp-render-'));
+
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
 
   const nextAppUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-  const dataString = JSON.stringify(templateData);
-  const encodedData = encodeURIComponent(dataString);
+  const encodedData = encodeURIComponent(JSON.stringify(templateData));
   const renderUrl = `${nextAppUrl}/render?data=${encodedData}`;
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-  const page = await browser.newPage();
-  await page.setViewport({
-    width: templateData.width || 1920,
-    height: templateData.height || 1080,
-  });
-
-  console.log(`Navigating to ${renderUrl}`);
+  await page.setViewport({ width: templateData.width || 1920, height: templateData.height || 1080 });
   await page.goto(renderUrl, { waitUntil: 'networkidle0' });
-  await page.waitForSelector('#render-container .konvajs-content');
+  await page.waitForFunction('seekAnimation');
 
-  const imagePath = `/tmp/frame-${Date.now()}.png`;
-  const renderContainer = await page.$('#render-container');
-  if (renderContainer) {
-    await renderContainer.screenshot({ path: imagePath });
-  } else {
-    throw new Error('Could not find render container.');
+  console.log('Capturing frames...');
+  for (let i = 0; i < TOTAL_FRAMES; i++) {
+    const time = i / FRAME_RATE;
+    await page.evaluate(time => window.seekAnimation(time), time);
+    const framePath = path.join(tempDir, `frame-${String(i).padStart(3, '0')}.png`);
+    await page.screenshot({ path: framePath });
   }
+  console.log('Finished capturing frames.');
+
   await browser.close();
 
-  const outputPath = `/tmp/output-${Date.now()}.mp4`;
-  const ffmpegCommand = `ffmpeg -loop 1 -i ${imagePath} -c:v libx264 -t 5 -pix_fmt yuv420p -vf scale=1920:1080 ${outputPath}`;
+  console.log('Stitching frames with FFmpeg...');
+  const outputPath = path.join(tempDir, 'output.mp4');
+  const ffmpegCommand = `ffmpeg -framerate ${FRAME_RATE} -i ${path.join(tempDir, 'frame-%03d.png')} -c:v libx264 -pix_fmt yuv420p ${outputPath}`;
 
   console.log('Executing FFmpeg command:', ffmpegCommand);
   await execAsync(ffmpegCommand);
-  console.log(`Video created at ${outputPath}`);
+  console.log(`Video created successfully at ${outputPath}`);
 
-  return outputPath;
+  return { outputPath, tempDir };
 }
 
 app.post('/render', async (req, res) => {
+  let tempDir;
   try {
     const templateData = req.body;
-    if (!templateData) {
-      return res.status(400).send('Template data is required.');
-    }
-    const videoPath = await renderVideo(templateData);
-    // In a real app, we'd upload this to a storage provider and return the URL.
-    // For now, we'll just return the path.
-    res.status(200).json({ videoUrl: videoPath });
+    if (!templateData) return res.status(400).send('Template data is required.');
+
+    const { outputPath, tempDir: capturedTempDir } = await renderVideo(templateData);
+    tempDir = capturedTempDir;
+
+    res.status(200).json({ videoUrl: outputPath });
   } catch (error) {
     console.error('Failed to render video:', error);
     res.status(500).send('Failed to render video.');
+  } finally {
+    if (tempDir) {
+      // For debugging, we might not want to delete the frames immediately.
+      // In production, this cleanup is important.
+      // fs.rm(tempDir, { recursive: true, force: true }).catch(console.error);
+      console.log(`Temporary files are in ${tempDir}. Not deleting for now for debugging.`);
+    }
   }
 });
 

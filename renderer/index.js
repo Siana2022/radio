@@ -27,11 +27,15 @@ async function renderVideo(templateData) {
   const encodedData = encodeURIComponent(JSON.stringify(templateData));
   const renderUrl = `${nextAppUrl}/render?data=${encodedData}`;
 
-  await page.setViewport({ width: templateData.width || 1920, height: templateData.height || 1080 });
+  const width = templateData.width || 1920;
+  const height = templateData.height || 1080;
+
+  await page.setViewport({ width, height });
+
   await page.goto(renderUrl, { waitUntil: 'networkidle0' });
   await page.waitForFunction('seekAnimation');
 
-  console.log('Capturing frames...');
+  console.log(`Capturing ${TOTAL_FRAMES} frames at ${width}x${height}...`);
   for (let i = 0; i < TOTAL_FRAMES; i++) {
     const time = i / FRAME_RATE;
     await page.evaluate(time => window.seekAnimation(time), time);
@@ -44,7 +48,7 @@ async function renderVideo(templateData) {
 
   console.log('Stitching frames with FFmpeg...');
   const outputPath = path.join(tempDir, 'output.mp4');
-  const ffmpegCommand = `ffmpeg -framerate ${FRAME_RATE} -i ${path.join(tempDir, 'frame-%03d.png')} -c:v libx264 -pix_fmt yuv420p ${outputPath}`;
+  const ffmpegCommand = `ffmpeg -framerate ${FRAME_RATE} -i ${path.join(tempDir, 'frame-%03d.png')} -c:v libx264 -pix_fmt yuv420p -vf scale=${width}:${height} ${outputPath}`;
 
   console.log('Executing FFmpeg command:', ffmpegCommand);
   await execAsync(ffmpegCommand);

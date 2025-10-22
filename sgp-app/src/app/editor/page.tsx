@@ -11,17 +11,9 @@ import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { User } from '@supabase/supabase-js';
 
-// Define types
-interface Animation {
-  type: 'none' | 'fadeIn' | 'slideInLeft';
-  duration: number;
-}
-interface BaseElement {
-  id: string;
-  x: number;
-  y: number;
-  animation?: Animation;
-}
+// Define types and ImageComponent...
+interface Animation { type: 'none' | 'fadeIn' | 'slideInLeft'; duration: number; }
+interface BaseElement { id: string; x: number; y: number; animation?: Animation; }
 interface RectangleElement extends BaseElement { type: 'rect'; width: number; height: number; fill: string; }
 interface TextElement extends BaseElement { type: 'text'; text: string; fontSize: number; fill: string; }
 interface ImageElement extends BaseElement { type: 'image'; src: string; width: number; height: number; }
@@ -45,6 +37,9 @@ const EditorPage = () => {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [resolution, setResolution] = useState('1920x1080');
+  const [isRendering, setIsRendering] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -155,12 +150,70 @@ const EditorPage = () => {
   };
   const onAddImageClick = () => fileInputRef.current?.click();
 
+  const handleGenerateVideo = async () => {
+    setIsRendering(true);
+    setVideoUrl(null);
+    setMessage('Generating video...');
+
+    const [width, height] = resolution.split('x').map(Number);
+
+    const templateData = {
+      width,
+      height,
+      elements: elements,
+    };
+
+    try {
+      const response = await fetch('/api/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateData),
+      });
+
+      if (!response.ok) {
+        const errorResult = await response.json();
+        throw new Error(errorResult.details || 'Failed to generate video.');
+      }
+
+      const result = await response.json();
+      setVideoUrl(result.videoUrl);
+      setMessage('Video generated successfully!');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      setMessage(`Error: ${errorMessage}`);
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
   const selectedElement = elements.find((el) => el.id === selectedId);
   if (!user) { return <div>Loading...</div>; }
 
   return (
     <div className="flex h-screen bg-gray-100">
       <aside className="w-80 bg-white p-4 shadow-md overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4">Actions</h2>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="resolution" className="block text-sm font-medium">Resolution</label>
+            <select
+              id="resolution" value={resolution} onChange={(e) => setResolution(e.target.value)}
+              className="mt-1 block w-full p-2 border rounded"
+            >
+              <option value="1920x1080">1920x1080 (16:9)</option>
+              <option value="1280x720">1280x720 (16:9)</option>
+              <option value="1080x1080">1080x1080 (1:1)</option>
+              <option value="1280x960">1280x960 (4:3)</option>
+            </select>
+          </div>
+          <button onClick={handleGenerateVideo} disabled={isRendering} className="w-full bg-purple-600 text-white p-2 rounded">
+            {isRendering ? 'Rendering...' : 'Generate Video'}
+          </button>
+          {videoUrl && (
+            <div><a href={videoUrl} target="_blank" rel="noopener noreferrer">View Video</a></div>
+          )}
+        </div>
+        <hr className="my-4" />
         <h2 className="text-xl font-bold mb-4">Template</h2>
         <div className="space-y-2">
           <input type="text" value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="w-full border p-2 rounded" />
@@ -185,7 +238,7 @@ const EditorPage = () => {
         <h2 className="text-xl font-bold mb-4">Properties</h2>
         {selectedElement ? (
           <div className="space-y-4">
-            {selectedElement.type !== 'image' && <div><label className="block text-sm">Fill</label><input type="text" name="fill" value={selectedElement.fill} onChange={handlePropertyChange} className="w-full p-2 border rounded" /></div>}
+            {selectedElement.type !== 'image' && <div><label className="block text-sm">Fill</label><input type="text" name="fill" value={(selectedElement as RectangleElement | TextElement).fill} onChange={handlePropertyChange} className="w-full p-2 border rounded" /></div>}
             {selectedElement.type === 'text' && <div><label className="block text-sm">Text</label><input type="text" name="text" value={selectedElement.text} onChange={handlePropertyChange} className="w-full p-2 border rounded" /></div>}
             <hr />
             <h3 className="text-lg font-semibold">Animation</h3>

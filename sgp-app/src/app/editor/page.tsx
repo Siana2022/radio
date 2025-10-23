@@ -3,8 +3,7 @@
 import React, { useState, useRef, useEffect, ChangeEvent, useCallback } from 'react';
 import { Stage, Layer, Rect, Text, Image as KonvaImage } from 'react-konva';
 import { KonvaEventObject } from 'konva/lib/Node';
-import Cropper from 'react-easy-crop';
-import { Point, Area } from 'react-easy-crop/types';
+import Cropper, { type Point, type Area } from 'react-easy-crop';
 import useImage from 'use-image';
 import getCroppedImg from '@/lib/cropImage';
 import { createClient } from '@/lib/supabase';
